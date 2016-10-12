@@ -1,0 +1,119 @@
+jobs:
+- name: unit
+  plan:
+  - aggregate:
+    - get: voyager-cli
+      trigger: true
+    - get: concourse-whale
+  - task: unit
+    image: concourse-whale
+    config:
+      platform: linux
+      inputs:
+      - name: voyager-cli
+      params:
+        GITHUB_USER:        {{github_username}}
+        GITHUB_PASSWORD:    {{github_password}}
+      run:
+        path: voyager-cli/ci/tasks/unit.sh
+
+- name: integration
+  plan:
+  - aggregate:
+    - put: it-env
+      params: {acquire: true}
+    - get: voyager-cli
+      trigger: true
+      passed: [unit]
+    - get: concourse-whale
+  - task: integration
+    image: concourse-whale
+    config:
+      platform: linux
+      inputs:
+      - name: voyager-cli
+      - name: it-env
+      params:
+        GITHUB_USER:        {{github_username}}
+        GITHUB_PASSWORD:    {{github_password}}
+        INTEGRATION_VM_USER:      {{integration_vm_user}}
+        INTEGRATION_VM_SSH_KEY:   {{integration_vm_ssh_key}}
+      run:
+        path: voyager-cli/ci/tasks/integration.sh
+    ensure:
+      put: it-env
+      params: {release: it-env}
+
+- name: build-binaries
+  serial: true
+  plan:
+  - aggregate:
+    - get: version
+      params: {bump: patch}
+    - get: concourse-whale
+    - get: voyager-cli
+      trigger: true
+      passed: [integration]
+  - task: build
+    image: concourse-whale
+    config:
+      platform: linux
+      inputs:
+      - name: voyager-cli
+      - name: version
+      outputs:
+      - name: build
+      params:
+        GITHUB_USER:        {{github_username}}
+        GITHUB_PASSWORD:    {{github_password}}
+      run:
+        path: voyager-cli/ci/tasks/build-candidate.sh
+  - put: mcc-cli-zip
+    params:
+      file: build/voyager-cli/voyager-cli-*.zip
+  - put: version
+    params: {file: version/version}
+
+resources:
+- name: voyager-cli
+  type: git
+  default-github: &github-secrets
+    username: {{github_username}}
+    password: {{github_password}}
+    skip_ssl_verification: true
+  source:
+    uri: https://github.com/RackHD/voyager-cli.git
+    branch: master
+    <<: *github-secrets
+
+- name: version
+  type: semver
+  source:
+    driver: git
+    uri: https://github.com/RackHD/voyager-cli.git
+    branch: version
+    file: version
+    <<: *github-secrets
+
+- name: it-env
+  type: pool
+  source:
+    uri: https://github.com/RackHD/voyager-release.git
+    branch: locks
+    pool: integration
+    <<: *github-secrets
+
+- name: concourse-whale
+  type: docker-image
+  source:
+    repository: {{concourse_whale_repository}}
+    insecure_registries: [{{docker_insecure_registries}}]
+
+- name: mcc-cli-zip
+  type: s3
+  source:
+    bucket: voyager-cli
+    regexp: voyager-cli-v(.*).zip
+    endpoint: {{minio_endpoint_url}}
+    access_key_id: {{minio_access_key}}
+    secret_access_key: {{minio_secret_key}}

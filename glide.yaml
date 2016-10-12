@@ -1,0 +1,18 @@
+package: github.com/RackHD/voyager-cli
+import:
+- package: github.com/fatih/color
+  version: ~1.2.0
+- package: github.com/mitchellh/go-homedir
+- package: github.com/olekukonko/tablewriter
+- package: github.com/RackHD/voyager-houston
+  version: ~33.0.0
+  subpackages:
+  - model
+- package: github.com/spf13/cobra
+testImport:
+- package: github.com/onsi/ginkgo
+  version: ~1.2.0
+- package: github.com/onsi/gomega
+  version: ~1.0.0
+  subpackages:
+  - ghttp
